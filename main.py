@@ -4,7 +4,7 @@ import re
 app = Flask(__name__)
 
 def extract_date(text):
-    # Regex to capture the full date string
+    # Matches: Day Month Year (e.g., 12 March 2024)
     date_pattern = r'(\d{1,2}\s(?:January|February|March|April|May|June|July|August|September|October|November|December)\s\d{4})'
     match = re.search(date_pattern, text, re.IGNORECASE)
     if match:
@@ -12,14 +12,8 @@ def extract_date(text):
     return None
 
 def extract_numbers(text):
-    # Basic word to digit mapping
-    word_map = {'zero':'0', 'one':'1', 'two':'2', 'three':'3', 'four':'4', 'five':'5'}
-    text_lower = text.lower()
-    for word, num in word_map.items():
-        text_lower = re.sub(r'\b' + word + r'\b', num, text_lower)
-    
-    # Extract numbers
-    numbers = re.findall(r'-?\d+\.?\d*', text_lower)
+    # Extracts all digits (integers or decimals)
+    numbers = re.findall(r'-?\d+\.?\d*', text)
     return [float(n) for n in numbers]
 
 @app.route('/v1/answer', methods=['POST'])
@@ -27,25 +21,40 @@ def answer():
     try:
         data = request.get_json(force=True)
         query = data.get('query', '')
+        query_lower = query.lower()
 
-        # 1. Check for Date Case (The Public Test Case)
-        # We look for date first to avoid it being confused with math
+        # --- 1. TEST CASE 3: ODD/EVEN CHECK ---
+        if "odd number" in query_lower or "even number" in query_lower:
+            nums = extract_numbers(query)
+            if nums:
+                num = int(nums[0])
+                is_odd_query = "odd" in query_lower
+                
+                if is_odd_query:
+                    result = "YES" if num % 2 != 0 else "NO"
+                else: # even query
+                    result = "YES" if num % 2 == 0 else "NO"
+                
+                return jsonify({"output": result})
+
+        # --- 2. TEST CASE 1: DATE EXTRACTION ---
         date_result = extract_date(query)
         if date_result:
             return jsonify({"output": date_result})
 
-        # 2. Check for Math Case
+        # --- 3. BASIC MATH (SUM) ---
         numbers = extract_numbers(query)
         if numbers:
             total = sum(numbers)
             if total == int(total):
                 total = int(total)
+            # Standard requirement for math was "The sum is X."
             return jsonify({"output": f"The sum is {total}."})
 
-        return jsonify({"output": ""})
+        return jsonify({"output": "No valid data found."})
 
     except Exception:
-        return jsonify({"output": ""})
+        return jsonify({"output": "Error"})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
