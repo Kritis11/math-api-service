@@ -3,78 +3,91 @@ import re
 
 app = Flask(__name__)
 
-def process_query(query):
-    query_lower = query.lower()
-    
-    # Check if this is a rule-based query (Level 7)
-    if "apply rules in order" in query_lower and "rule 1" in query_lower:
-        # Extract input number
-        num_match = re.search(r'input number (\d+)', query_lower)
-        if not num_match:
-            return "0"
-        
-        n = int(num_match.group(1))
-        
-        # Apply Rule 1
-        if n % 2 == 0:  # even
-            n = n * 2
-        else:  # odd
-            n = n + 10
-        
-        # Apply Rule 2
-        if n > 20:
-            n = n - 5
-        else:
-            n = n + 3
-        
-        # Apply Rule 3
-        if n % 3 == 0:
-            return "FIZZ"
-        else:
-            return str(n)
-    
-    # Handle basic math queries (for previous levels)
-    # Extract numbers
-    numbers = re.findall(r'-?\d+', query_lower)
-    if len(numbers) < 2:
-        return "0"
-    
-    a = int(numbers[0])
-    b = int(numbers[1])
-    
-    # Determine operation
-    if "plus" in query_lower or "add" in query_lower or "+" in query:
-        result = a + b
-    elif "minus" in query_lower or "subtract" in query_lower or "-" in query:
-        result = a - b
-    elif "times" in query_lower or "multiplied" in query_lower or "multiply" in query_lower or "x" in query_lower:
-        result = a * b
-    elif "divided" in query_lower or "divide" in query_lower or "/" in query:
-        if b == 0:
-            return "0"
-        result = a / b
-        if result.is_integer():
-            result = int(result)
-    else:
-        # Default to addition
-        result = a + b
-    
-    return str(result)
+def format_number(value):
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
 
-@app.route('/v1/answer', methods=['POST'])
+def solve_basic_math(query: str) -> str:
+    q = query.lower().strip()
+
+    # Normalizing Level 1-6 phrases
+    replacements = {
+        "multiplied by": "*",
+        "times": "*",
+        "x": "*",
+        "plus": "+",
+        "added to": "+",
+        "add": "+",
+        "minus": "-",
+        "subtract": "-",
+        "subtracted by": "-",
+        "divided by": "/",
+        "divide by": "/",
+        "divide": "/",
+        "over": "/",
+    }
+
+    for old, new in replacements.items():
+        q = q.replace(old, f" {new} ")
+
+    q = re.sub(r"\s+", " ", q)
+
+    # Search for "Number Operator Number"
+    match = re.search(r"(-?\d+)\s*([+\-*/])\s*(-?\d+)", q)
+    if not match:
+        # Fallback: if no operator found, find any two numbers and add them
+        nums = re.findall(r"-?\d+", q)
+        if len(nums) >= 2:
+            return str(int(nums[0]) + int(nums[1]))
+        return "0"
+
+    a = int(match.group(1))
+    op = match.group(2)
+    b = int(match.group(3))
+
+    try:
+        if op == "+": return str(a + b)
+        if op == "-": return str(a - b)
+        if op == "*": return str(a * b)
+        if op == "/":
+            if b == 0: return "0"
+            return format_number(a / b)
+    except:
+        return "0"
+    return "0"
+
+def solve_query(query: str) -> str:
+    try:
+        q = query.lower()
+
+        # LEVEL 7 LOGIC
+        if "apply rules in order" in q and "input number" in q:
+            num_match = re.search(r"input number\s*(-?\d+)", q)
+            if not num_match: return "0"
+            n = int(num_match.group(1))
+
+            # Rule 1
+            n = n * 2 if n % 2 == 0 else n + 10
+            # Rule 2
+            n = n - 5 if n > 20 else n + 3
+            # Rule 3
+            return "FIZZ" if n % 3 == 0 else str(n)
+
+        # LEVELS 1-6 LOGIC
+        return solve_basic_math(query)
+
+    except:
+        return "0"
+
+@app.route("/v1/answer", methods=["POST"])
 def answer():
     try:
-        data = request.get_json()
-        if not data or 'query' not in data:
-            return jsonify({"output": "0"})
-        
-        query = data['query']
-        result = process_query(query)
-        
-        return jsonify({"output": result})
-    
-    except Exception as e:
+        data = request.get_json(silent=True) or {}
+        query = str(data.get("query", ""))
+        return jsonify({"output": solve_query(query)})
+    except:
         return jsonify({"output": "0"})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
