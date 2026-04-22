@@ -1,114 +1,193 @@
+from flask import Flask, request, jsonify
 import re
+import os
 import unicodedata
 
+app = Flask(__name__)
+
+
+# ─────────────────────────────────────────
+# LEVEL 12: Definite Integral
+# ─────────────────────────────────────────
 def solve_integral(q):
     try:
-        # Normalize unicode to make symbols easier to parse
         q = unicodedata.normalize("NFKC", q)
-
-        # Translate common unicode variants to ASCII
         translation = str.maketrans({
-            "−": "-",
-            "–": "-",
-            "—": "-",
-            "·": "*",
-            "×": "*",
-            "²": "^2",
-            "³": "^3",
-            "⁴": "^4",
-            "⁵": "^5",
-            "⁶": "^6",
-            "⁷": "^7",
-            "⁸": "^8",
-            "⁹": "^9",
-            "⁰": "^0",
-            "₀": "0",
-            "₁": "1",
-            "₂": "2",
-            "₃": "3",
-            "₄": "4",
-            "₅": "5",
-            "₆": "6",
-            "₇": "7",
-            "₈": "8",
-            "₉": "9",
-            "∫": "",
+            "\u2212": "-",
+            "\u2013": "-",
+            "\u2014": "-",
+            "\u00b2": "^2",
+            "\u00b3": "^3",
+            "\u2074": "^4",
+            "\u2075": "^5",
+            "\u2076": "^6",
+            "\u2077": "^7",
+            "\u2078": "^8",
+            "\u2079": "^9",
+            "\u2070": "^0",
+            "\u2080": "0",
+            "\u2081": "1",
+            "\u2082": "2",
+            "\u2083": "3",
+            "\u2084": "4",
+            "\u2085": "5",
+            "\u2086": "6",
+            "\u2087": "7",
+            "\u2088": "8",
+            "\u2089": "9",
+            "\u222b": "",
+            "\u00b7": "*",
+            "\u00d7": "*",
         })
         q = q.translate(translation)
 
-        # Remove spaces for easier matching
         compact = re.sub(r"\s+", "", q)
 
-        # Extract bounds from patterns like:
-        # integralfrom0to3
-        # integral0to3
-        # integral_0^3 after normalization variants
-        bounds = re.search(r"(?:from)?(-?\d+)(?:to|,|-)(-?\d+)", compact, re.I)
-        if not bounds:
-            # Fallback for the exact style in the challenge
-            bounds = re.search(r"0to3", compact)
-            if not bounds:
-                return "0"
-            lower, upper = 0, 3
-        else:
+        bounds = re.search(r"(?:from)?(-?\d+)(?:to)(-?\d+)", compact, re.I)
+        if bounds:
             lower = int(bounds.group(1))
             upper = int(bounds.group(2))
+        else:
+            digits = re.findall(r"-?\d+", compact[:30])
+            if len(digits) >= 2:
+                lower = int(digits[0])
+                upper = int(digits[1])
+            else:
+                return "0"
 
-        # Extract integrand inside parentheses if present
         expr_match = re.search(r"\(([^()]*)\)", compact)
         expr = expr_match.group(1) if expr_match else compact
 
-        # Convert caret notation to a standard form
         expr = expr.replace("^", "**")
-
-        # Very small polynomial evaluator for expressions like:
-        # 9-x**2
-        # 3*x**2+2*x-1
-        # x**2
-        # -x**2+9
-        #
-        # We parse terms by turning subtraction into +-
         expr = expr.replace("-", "+-")
-        terms = [t for t in expr.split("+") if t]
+        terms = [t for t in expr.split("+") if t.strip()]
 
-        def term_integral_value(term, x):
-            term = term.replace("*", "")
+        def integrate_term(term, x):
+            term = term.strip()
+            if not term:
+                return 0.0
+            term = term.replace(" ", "").replace("*", "")
             if "x" not in term:
-                return float(term)
-
-            # coefficient and power handling
+                try:
+                    return float(term) * x
+                except Exception:
+                    return 0.0
             if "x**" in term:
-                left, right = term.split("x**", 1)
-                coef = left
-                power = int(right)
+                parts = term.split("x**", 1)
+                coef_str = parts[0]
+                power = int(parts[1])
             else:
-                left = term.split("x", 1)[0]
-                coef = left
+                parts = term.split("x", 1)
+                coef_str = parts[0]
                 power = 1
-
-            if coef in ("", "+"):
-                coef_val = 1.0
-            elif coef == "-":
-                coef_val = -1.0
+            if coef_str in ("", "+"):
+                coef = 1.0
+            elif coef_str == "-":
+                coef = -1.0
             else:
-                coef_val = float(coef)
+                try:
+                    coef = float(coef_str)
+                except Exception:
+                    coef = 1.0
+            return coef / (power + 1) * (x ** (power + 1))
 
-            return coef_val / (power + 1) * (x ** (power + 1))
-
-        def eval_integral(expr_terms, x):
-            total = 0.0
-            for term in expr_terms:
-                total += term_integral_value(term, x)
-            return total
-
-        upper_val = eval_integral(terms, upper)
-        lower_val = eval_integral(terms, lower)
+        upper_val = sum(integrate_term(t, upper) for t in terms)
+        lower_val = sum(integrate_term(t, lower) for t in terms)
         result = upper_val - lower_val
 
-        # Return as integer when mathematically integral
         if abs(result - round(result)) < 1e-9:
             return str(int(round(result)))
-        return str(result)
+        return str(round(result, 6))
 
     except Exception:
         return "0"
+
+
+# ─────────────────────────────────────────
+# LEVEL 11: GCD of Polynomials
+# ─────────────────────────────────────────
+def solve_gcd_polynomial(q):
+    try:
+        q = q.replace("\u2212", "-")
+        q = q.replace("\u2013", "-")
+        q = q.replace("\u2014", "-")
+
+        p_match = re.search(r"p\(x\)\s*=\s*([\s\S]+?)q\(x\)", q)
+        q_match = re.search(r"q\(x\)\s*=\s*([\s\S]+?)(?:Compute|$)", q)
+
+        if not p_match or not q_match:
+            return "0"
+
+        p_expr = p_match.group(1)
+        q_expr = q_match.group(1)
+
+        def extract_roots(expr):
+            roots = []
+            for m in re.finditer(r"\(\s*x\s*([-+])\s*(\d+)\s*\)", expr):
+                sign = m.group(1)
+                val = int(m.group(2))
+                root = val if sign == "-" else -val
+                roots.append(root)
+            return set(roots)
+
+        p_roots = extract_roots(p_expr)
+        q_roots = extract_roots(q_expr)
+        common = p_roots & q_roots
+        return str(len(common))
+    except Exception:
+        return "0"
+
+
+# ─────────────────────────────────────────
+# LEVEL 1-6: Basic Math
+# ─────────────────────────────────────────
+def solve_math(q):
+    try:
+        nums = re.findall(r"-?\d+", q)
+        if not nums:
+            return "0"
+        nums = [int(n) for n in nums]
+        ql = q.lower()
+        if any(op in ql for op in ["minus", "subtract"]):
+            return str(nums[0] - nums[1]) if len(nums) >= 2 else str(nums[0])
+        if any(op in ql for op in ["times", "multipl", "product"]):
+            result = 1
+            for n in nums:
+                result *= n
+            return str(result)
+        if any(op in ql for op in ["divided", "divide"]):
+            return str(nums[0] // nums[1]) if len(nums) >= 2 else str(nums[0])
+        return str(sum(nums))
+    except Exception:
+        return "0"
+
+
+# ─────────────────────────────────────────
+# ROUTER
+# ─────────────────────────────────────────
+@app.route("/v1/answer", methods=["POST"])
+def answer():
+    data = request.get_json(silent=True) or {}
+    query = data.get("query", "")
+
+    if not isinstance(query, str) or not query.strip():
+        return jsonify({"output": "0"})
+
+    ql = query.lower()
+
+    # Level 12 — Definite Integral
+    if "integral" in ql or "\u222b" in query:
+        return jsonify({"output": solve_integral(query)})
+
+    # Level 11 — GCD Polynomial
+    if "gcd" in ql and "polynomial" in ql:
+        return jsonify({"output": solve_gcd_polynomial(query)})
+
+    # Level 1-6 — Basic Math
+    val = solve_math(query)
+    return jsonify({"output": "The sum is " + val + "."})
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
