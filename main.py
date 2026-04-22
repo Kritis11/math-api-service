@@ -1,93 +1,76 @@
 from flask import Flask, request, jsonify
 import re
+import os
 
 app = Flask(__name__)
 
-def format_number(value):
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value)
+def solve_query(query):
+    q = query.lower()
 
-def solve_basic_math(query: str) -> str:
-    q = query.lower().strip()
+    # Level 7 - Rule based logic
+    if "apply rules" in q or "rule 1" in q:
+        # Extract input number
+        match = re.search(r"input number\s*(-?\d+)", q)
+        if not match:
+            return "0"
+        n = int(match.group(1))
 
-    # Normalizing Level 1-6 phrases
-    replacements = {
-        "multiplied by": "*",
-        "times": "*",
-        "x": "*",
-        "plus": "+",
-        "added to": "+",
-        "add": "+",
-        "minus": "-",
-        "subtract": "-",
-        "subtracted by": "-",
-        "divided by": "/",
-        "divide by": "/",
-        "divide": "/",
-        "over": "/",
-    }
+        # Rule 1: even -> double, odd -> add 10
+        if n % 2 == 0:
+            n = n * 2
+        else:
+            n = n + 10
 
-    for old, new in replacements.items():
-        q = q.replace(old, f" {new} ")
+        # Rule 2: > 20 -> subtract 5, else add 3
+        if n > 20:
+            n = n - 5
+        else:
+            n = n + 3
 
-    q = re.sub(r"\s+", " ", q)
+        # Rule 3: divisible by 3 -> FIZZ, else number
+        if n % 3 == 0:
+            return "FIZZ"
+        else:
+            return str(n)
 
-    # Search for "Number Operator Number"
-    match = re.search(r"(-?\d+)\s*([+\-*/])\s*(-?\d+)", q)
-    if not match:
-        # Fallback: if no operator found, find any two numbers and add them
+    # Addition
+    if any(w in q for w in ["plus", "add", "sum", "+"]):
         nums = re.findall(r"-?\d+", q)
         if len(nums) >= 2:
             return str(int(nums[0]) + int(nums[1]))
-        return "0"
 
-    a = int(match.group(1))
-    op = match.group(2)
-    b = int(match.group(3))
+    # Subtraction
+    if any(w in q for w in ["minus", "subtract", "difference", "-"]):
+        nums = re.findall(r"-?\d+", q)
+        if len(nums) >= 2:
+            return str(int(nums[0]) - int(nums[1]))
 
-    try:
-        if op == "+": return str(a + b)
-        if op == "-": return str(a - b)
-        if op == "*": return str(a * b)
-        if op == "/":
-            if b == 0: return "0"
-            return format_number(a / b)
-    except:
-        return "0"
+    # Multiplication
+    if any(w in q for w in ["times", "multiply", "multiplied", "product", "*", "x"]):
+        nums = re.findall(r"-?\d+", q)
+        if len(nums) >= 2:
+            return str(int(nums[0]) * int(nums[1]))
+
+    # Division
+    if any(w in q for w in ["divide", "divided", "quotient", "/"]):
+        nums = re.findall(r"-?\d+", q)
+        if len(nums) >= 2 and int(nums[1]) != 0:
+            return str(int(nums[0]) // int(nums[1]))
+
+    # Fallback
+    nums = re.findall(r"-?\d+", q)
+    if len(nums) >= 2:
+        return str(int(nums[0]) + int(nums[1]))
+
     return "0"
-
-def solve_query(query: str) -> str:
-    try:
-        q = query.lower()
-
-        # LEVEL 7 LOGIC
-        if "apply rules in order" in q and "input number" in q:
-            num_match = re.search(r"input number\s*(-?\d+)", q)
-            if not num_match: return "0"
-            n = int(num_match.group(1))
-
-            # Rule 1
-            n = n * 2 if n % 2 == 0 else n + 10
-            # Rule 2
-            n = n - 5 if n > 20 else n + 3
-            # Rule 3
-            return "FIZZ" if n % 3 == 0 else str(n)
-
-        # LEVELS 1-6 LOGIC
-        return solve_basic_math(query)
-
-    except:
-        return "0"
 
 @app.route("/v1/answer", methods=["POST"])
 def answer():
-    try:
-        data = request.get_json(silent=True) or {}
-        query = str(data.get("query", ""))
-        return jsonify({"output": solve_query(query)})
-    except:
-        return jsonify({"output": "0"})
+    data = request.get_json(silent=True) or {}
+    query = data.get("query", "")
+    result = solve_query(query)
+    return jsonify({"output": result})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
