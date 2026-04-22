@@ -1,193 +1,255 @@
-from flask import Flask, request, jsonify
 import re
-import os
-import unicodedata
+import math
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
+# ============================================================================
+# SOLVER 1: Modular Exponentiation (Last X digits of Y^Z)
+# ============================================================================
+def solve_modular_exp(q):
+    """
+    Handles:
+    - "What are the last 6 digits of 7^777?"
+    - "7^777 mod 10^6"
+    - "compute 7^777 mod 10^6"
+    """
+    ql = q.lower()
+    
+    # Pattern 1: "last X digits of Y^Z"
+    m = re.search(r'last\s+(\d+)\s+digits?\s+of\s+(\d+)\s*\^\s*(\d+)', ql)
+    if m:
+        digits = int(m.group(1))
+        base = int(m.group(2))
+        exp = int(m.group(3))
+        mod = 10 ** digits
+        result = pow(base, exp, mod)
+        
+        # Format with leading zeros if needed
+        s = str(result)
+        if len(s) < digits:
+            s = s.zfill(digits)
+        return s
+    
+    # Pattern 2: "Y^Z mod 10^X"
+    m = re.search(r'(\d+)\s*\^\s*(\d+)\s+mod\s+10\s*\^\s*(\d+)', ql)
+    if m:
+        base = int(m.group(1))
+        exp = int(m.group(2))
+        mod_pow = int(m.group(3))
+        mod = 10 ** mod_pow
+        result = pow(base, exp, mod)
+        
+        s = str(result)
+        if len(s) < mod_pow:
+            s = s.zfill(mod_pow)
+        return s
+    
+    return None
 
-# ─────────────────────────────────────────
-# LEVEL 12: Definite Integral
-# ─────────────────────────────────────────
+
+# ============================================================================
+# SOLVER 2: Definite Integrals
+# ============================================================================
 def solve_integral(q):
+    """
+    Handles:
+    - "Compute the definite integral from 0 to 3 of (9 minus x squared) dx"
+    - "∫₀³ (9 − x²) dx"
+    - Uses numerical integration (Simpson's rule)
+    """
+    ql = q.lower()
+    
+    # Check if it's an integral query
+    if 'integral' not in ql and '∫' not in ql:
+        return None
+    
     try:
-        q = unicodedata.normalize("NFKC", q)
-        translation = str.maketrans({
-            "\u2212": "-",
-            "\u2013": "-",
-            "\u2014": "-",
-            "\u00b2": "^2",
-            "\u00b3": "^3",
-            "\u2074": "^4",
-            "\u2075": "^5",
-            "\u2076": "^6",
-            "\u2077": "^7",
-            "\u2078": "^8",
-            "\u2079": "^9",
-            "\u2070": "^0",
-            "\u2080": "0",
-            "\u2081": "1",
-            "\u2082": "2",
-            "\u2083": "3",
-            "\u2084": "4",
-            "\u2085": "5",
-            "\u2086": "6",
-            "\u2087": "7",
-            "\u2088": "8",
-            "\u2089": "9",
-            "\u222b": "",
-            "\u00b7": "*",
-            "\u00d7": "*",
-        })
-        q = q.translate(translation)
-
-        compact = re.sub(r"\s+", "", q)
-
-        bounds = re.search(r"(?:from)?(-?\d+)(?:to)(-?\d+)", compact, re.I)
-        if bounds:
-            lower = int(bounds.group(1))
-            upper = int(bounds.group(2))
-        else:
-            digits = re.findall(r"-?\d+", compact[:30])
+        # Replace word-based operations
+        q_clean = q.lower()
+        q_clean = q_clean.replace('minus', '-')
+        q_clean = q_clean.replace('plus', '+')
+        q_clean = q_clean.replace('times', '*')
+        q_clean = q_clean.replace('divided by', '/')
+        q_clean = q_clean.replace('squared', '^2')
+        q_clean = q_clean.replace('cubed', '^3')
+        q_clean = q_clean.replace('^', '**')
+        q_clean = q_clean.replace('−', '-')  # Unicode minus
+        
+        # Extract bounds: "from X to Y" or "₀³"
+        bounds_match = re.search(r'from\s+([-\d.]+)\s+to\s+([-\d.]+)', q_clean)
+        if not bounds_match:
+            bounds_match = re.search(r'integral\s*[:\s]*.*?([0-9\-]+).*?to.*?([0-9\-]+)', q_clean)
+        if not bounds_match:
+            # Try digit extraction
+            digits = re.findall(r'[-]?\d+\.?\d*', q_clean)
             if len(digits) >= 2:
-                lower = int(digits[0])
-                upper = int(digits[1])
+                a, b = float(digits[0]), float(digits[1])
             else:
-                return "0"
-
-        expr_match = re.search(r"\(([^()]*)\)", compact)
-        expr = expr_match.group(1) if expr_match else compact
-
-        expr = expr.replace("^", "**")
-        expr = expr.replace("-", "+-")
-        terms = [t for t in expr.split("+") if t.strip()]
-
-        def integrate_term(term, x):
-            term = term.strip()
-            if not term:
-                return 0.0
-            term = term.replace(" ", "").replace("*", "")
-            if "x" not in term:
-                try:
-                    return float(term) * x
-                except Exception:
-                    return 0.0
-            if "x**" in term:
-                parts = term.split("x**", 1)
-                coef_str = parts[0]
-                power = int(parts[1])
-            else:
-                parts = term.split("x", 1)
-                coef_str = parts[0]
-                power = 1
-            if coef_str in ("", "+"):
-                coef = 1.0
-            elif coef_str == "-":
-                coef = -1.0
-            else:
-                try:
-                    coef = float(coef_str)
-                except Exception:
-                    coef = 1.0
-            return coef / (power + 1) * (x ** (power + 1))
-
-        upper_val = sum(integrate_term(t, upper) for t in terms)
-        lower_val = sum(integrate_term(t, lower) for t in terms)
-        result = upper_val - lower_val
-
-        if abs(result - round(result)) < 1e-9:
-            return str(int(round(result)))
-        return str(round(result, 6))
-
-    except Exception:
-        return "0"
-
-
-# ─────────────────────────────────────────
-# LEVEL 11: GCD of Polynomials
-# ─────────────────────────────────────────
-def solve_gcd_polynomial(q):
-    try:
-        q = q.replace("\u2212", "-")
-        q = q.replace("\u2013", "-")
-        q = q.replace("\u2014", "-")
-
-        p_match = re.search(r"p\(x\)\s*=\s*([\s\S]+?)q\(x\)", q)
-        q_match = re.search(r"q\(x\)\s*=\s*([\s\S]+?)(?:Compute|$)", q)
-
-        if not p_match or not q_match:
-            return "0"
-
-        p_expr = p_match.group(1)
-        q_expr = q_match.group(1)
-
-        def extract_roots(expr):
-            roots = []
-            for m in re.finditer(r"\(\s*x\s*([-+])\s*(\d+)\s*\)", expr):
-                sign = m.group(1)
-                val = int(m.group(2))
-                root = val if sign == "-" else -val
-                roots.append(root)
-            return set(roots)
-
-        p_roots = extract_roots(p_expr)
-        q_roots = extract_roots(q_expr)
-        common = p_roots & q_roots
-        return str(len(common))
-    except Exception:
-        return "0"
+                return None
+        else:
+            a = float(bounds_match.group(1))
+            b = float(bounds_match.group(2))
+        
+        # Extract integrand: between "of" and "dx"
+        integrand_match = re.search(r'of\s+(.*?)\s+dx', q_clean)
+        if not integrand_match:
+            integrand_match = re.search(r'\((.*?)\)\s*dx', q_clean)
+        
+        if not integrand_match:
+            return None
+        
+        integrand_str = integrand_match.group(1).strip()
+        
+        # Clean up integrand
+        integrand_str = integrand_str.replace('(', '').replace(')', '')
+        integrand_str = integrand_str.strip()
+        
+        # Simpson's rule for numerical integration
+        def simpson_rule(f, a, b, n=1000):
+            h = (b - a) / n
+            x = a
+            result = f(a) + f(b)
+            for i in range(1, n):
+                x = a + i * h
+                if i % 2 == 1:
+                    result += 4 * f(x)
+                else:
+                    result += 2 * f(x)
+            result *= h / 3.0
+            return result
+        
+        # Create function from string
+        def f(x):
+            expr = integrand_str.replace('x', f'({x})')
+            try:
+                return eval(expr)
+            except:
+                return 0
+        
+        result = simpson_rule(f, a, b)
+        result_int = int(round(result))
+        
+        return str(result_int)
+    
+    except Exception as e:
+        return None
 
 
-# ─────────────────────────────────────────
-# LEVEL 1-6: Basic Math
-# ─────────────────────────────────────────
-def solve_math(q):
-    try:
-        nums = re.findall(r"-?\d+", q)
-        if not nums:
-            return "0"
-        nums = [int(n) for n in nums]
-        ql = q.lower()
-        if any(op in ql for op in ["minus", "subtract"]):
-            return str(nums[0] - nums[1]) if len(nums) >= 2 else str(nums[0])
-        if any(op in ql for op in ["times", "multipl", "product"]):
-            result = 1
-            for n in nums:
-                result *= n
+# ============================================================================
+# SOLVER 3: Basic Arithmetic (sum, difference, product, quotient)
+# ============================================================================
+def solve_arithmetic(q):
+    """
+    Handles:
+    - "What is 5 plus 3?"
+    - "5 + 3"
+    - "compute 10 times 2 divided by 4"
+    - Supports: plus, minus, times, divided by, sum, difference, product
+    """
+    ql = q.lower()
+    
+    # Remove common question words
+    q_clean = ql.replace('what is', '').replace('compute', '').replace('calculate', '')
+    q_clean = q_clean.replace('the sum is', '').replace('output only the integer', '')
+    q_clean = q_clean.replace('output only', '').replace('?', '').strip()
+    
+    # Replace word operators with symbols
+    q_clean = re.sub(r'\bdivided\s+by\b', '/', q_clean)
+    q_clean = re.sub(r'\btimes\b', '*', q_clean)
+    q_clean = re.sub(r'\bplus\b', '+', q_clean)
+    q_clean = re.sub(r'\bminus\b', '-', q_clean)
+    
+    # Handle "sum of X and Y" pattern
+    sum_match = re.search(r'sum\s+(?:of\s+)?([^?]+?)(?:\s+and\s+|\+)([^?]+)', q_clean)
+    if sum_match:
+        try:
+            a = float(sum_match.group(1).strip())
+            b = float(sum_match.group(2).strip())
+            result = int(a + b)
             return str(result)
-        if any(op in ql for op in ["divided", "divide"]):
-            return str(nums[0] // nums[1]) if len(nums) >= 2 else str(nums[0])
-        return str(sum(nums))
-    except Exception:
-        return "0"
+        except:
+            pass
+    
+    # Extract all numbers
+    numbers = re.findall(r'-?\d+\.?\d*', q_clean)
+    if not numbers:
+        return None
+    
+    try:
+        # Convert to floats
+        numbers = [float(n) for n in numbers]
+        
+        # Determine operation from keywords
+        if '+' in q_clean or 'plus' in ql or 'sum' in ql:
+            result = sum(numbers)
+        elif '*' in q_clean or 'times' in ql or 'product' in ql:
+            result = 1
+            for n in numbers:
+                result *= n
+        elif '/' in q_clean or 'divided' in ql:
+            result = numbers[0]
+            for n in numbers[1:]:
+                if n != 0:
+                    result /= n
+        elif '-' in q_clean or 'minus' in ql or 'difference' in ql:
+            result = numbers[0]
+            for n in numbers[1:]:
+                result -= n
+        else:
+            # Default: sum
+            result = sum(numbers)
+        
+        result_int = int(round(result))
+        return str(result_int)
+    
+    except Exception as e:
+        return None
 
 
-# ─────────────────────────────────────────
-# ROUTER
-# ─────────────────────────────────────────
-@app.route("/v1/answer", methods=["POST"])
+# ============================================================================
+# MAIN HANDLER
+# ============================================================================
+@app.route('/v1/answer', methods=['POST'])
 def answer():
-    data = request.get_json(silent=True) or {}
-    query = data.get("query", "")
-
-    if not isinstance(query, str) or not query.strip():
+    try:
+        data = request.get_json()
+        q = data.get('query', '')
+        
+        if not q:
+            return jsonify({"output": "0"})
+        
+        # Try solvers in order of specificity
+        
+        # 1. Modular exponentiation (most specific)
+        result = solve_modular_exp(q)
+        if result is not None:
+            return jsonify({"output": result})
+        
+        # 2. Definite integrals
+        result = solve_integral(q)
+        if result is not None:
+            return jsonify({"output": result})
+        
+        # 3. Basic arithmetic (most general)
+        result = solve_arithmetic(q)
+        if result is not None:
+            return jsonify({"output": result})
+        
+        # No solver matched
+        return jsonify({"output": "0"})
+    
+    except Exception as e:
         return jsonify({"output": "0"})
 
-    ql = query.lower()
 
-    # Level 12 — Definite Integral
-    if "integral" in ql or "\u222b" in query:
-        return jsonify({"output": solve_integral(query)})
-
-    # Level 11 — GCD Polynomial
-    if "gcd" in ql and "polynomial" in ql:
-        return jsonify({"output": solve_gcd_polynomial(query)})
-
-    # Level 1-6 — Basic Math
-    val = solve_math(query)
-    return jsonify({"output": "The sum is " + val + "."})
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok"})
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)
